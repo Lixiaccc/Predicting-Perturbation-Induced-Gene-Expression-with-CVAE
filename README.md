@@ -1,4 +1,4 @@
-# HIGH_DIM_final — CVAE for KO RNA prediction
+#  CVAE for KO RNA prediction
 
 A conditional VAE that predicts post-knockout RNA expression (HVG-log1p) from a
 cell's ATAC profile and a gene-identity embedding for the KO target. Trained
