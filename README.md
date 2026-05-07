@@ -1,4 +1,6 @@
-#  CVAE for KO RNA prediction
+# Predicting Perturbation-Induced Gene Expression from Baseline Chromatin Accessibility Using OT and Multimodal Generative Modeling
+
+##  CVAE for KO RNA prediction Portion of the Project
 
 A conditional VAE that predicts post-knockout RNA expression (HVG-log1p) from a
 cell's ATAC profile and a gene-identity embedding for the KO target. Trained
@@ -80,3 +82,25 @@ python scripts/06_plot_main_panels.py
 python scripts/07_per_ko_heatmap.py
 python scripts/08_distance_split.py          # separate distance-split experiment
 
+---
+
+## Optimal transport / moscot analysis
+
+The optimal transport (OT) portion of the project is contained in two Colab notebooks under `notebooks/`.
+
+```text
+notebooks/
+
+   ├── moscot_RNA_only_end_to_end_grid_handoff_COMMON_EVAL.ipynb
+   │   # RNA-only moscot grid search.
+   │   # Fits OT plans from NTC cells to each KO population across epsilon/tau settings.
+   │   # Uses common RNA PCA evaluation based on the saved transport plan barycenter.
+   │   # Produces the RNA-only hyperparameter heatmap and the final OT handoff used by the CVAE.
+
+   └── moscot_multimodal_FINAL_DEFENSIBLE_COMMON_EVAL_WITH_SANITY_CHECKS_v3_RNA_MATCHED.ipynb
+       # Multimodal OT comparison.
+       # Compares RNA-only, ATAC LSI-only, RNA PCA + ATAC LSI concatenation,
+       # GW with ATAC geometry, and FGW variants using ATAC/RNA geometry and gene activity.
+       # Re-evaluates saved OT plans in common RNA PCA space using barycentric projection.
+       # Also includes ATAC LSI evaluation and sanity checks comparing moscot translated
+       # outputs against direct plan-barycenter evaluation.
