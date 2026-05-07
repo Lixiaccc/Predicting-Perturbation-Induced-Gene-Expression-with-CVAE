@@ -20,8 +20,7 @@ scripts/
    ├── 01_generate_genept.py  # GenePT embeddings for the 9 KO genes (OpenAI)
 
 
-   ├── 02_preprocess.py       # RNA -> HVG/PCA, ATAC -> TF-IDF/LSI,
-                        # GenePT -> 32-D, writes processed/cells.npz
+   ├── 02_preprocess.py       # RNA -> HVG/PCA, ATAC -> TF-IDF/LSI, GenePT -> 32-D, writes processed/cells.npz
    ├── 03_train.py            # CVAE training (variants + ablations)
   
    ├── 04_run_leave2out.sh    # leave-2-out CV across all C(9,2)=36 KO pairs
@@ -37,12 +36,9 @@ scripts/
    
 processed/
 
-   ├── cells.npz              # aligned per-cell arrays (ATAC_LSI, RNA_PCA,
-   
-                              # RNA_HVG_log1p, label_int, gene embeddings)
+   ├── cells.npz              # aligned per-cell arrays (ATAC_LSI, RNA_PCA, RNA_HVG_log1p, label_int, gene embeddings)
                               
-   └── projectors/            # PCA loadings, TF-IDF/SVD, HVG list,
-                              # GenePT/Geneformer gene-embedding tables
+   └── projectors/            # PCA loadings, TF-IDF/SVD, HVG list, GenePT/Geneformer gene-embedding tables
 
                               
 models/                    # trained CVAE checkpoints (.pt) + history
