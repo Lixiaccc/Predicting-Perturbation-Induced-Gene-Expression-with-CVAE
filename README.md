@@ -351,15 +351,6 @@ Two model variants are trained, differing only in the encoder input modality:
 | `--test_frac` | 0.1 | Fraction of in-distribution cells used for test |
 | `--gene_emb` | `genept` | Gene embedding source: `genept` or `geneformer` |
 
-**Loss and optimization flags:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--kl_weight` | 1.0 | Weight applied to the KL term |
-| `--free_bits_tau` | 0.1 | Free-bits floor τ per latent dimension (nats) |
-| `--mmd_weight` | 0.0 | Weight of the MMD² distribution-matching auxiliary loss |
-| `--mean_align_weight` | 0.0 | Weight of the per-KO mean-alignment auxiliary loss |
-
 Default optimizer settings: lr=1e-3, epochs=200, patience=20, weight_decay=1e-4, batch_size=64.
 
 ### Evaluation metrics (`scripts/05_evaluate.py`)
