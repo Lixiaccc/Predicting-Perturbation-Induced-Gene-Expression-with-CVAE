@@ -177,70 +177,321 @@ Please note that specific packages need specific versions which are defined at t
   "moscot==0.5.0"
 ```
 
-## CVAE for KO RNA prediction Portion of the Project
+## CVAE for KO RNA Prediction
 
-A conditional VAE that predicts post-knockout RNA expression (HVG-log1p) from a
-cell's ATAC profile and a gene-identity embedding for the KO target. Trained
-and evaluated on a 9-KO + NTC dataset (10 conditions).
+A conditional variational autoencoder (CVAE) that predicts post-knockout RNA
+expression (HVG log1p-normalized) from a cell's ATAC chromatin accessibility
+profile and a language-model gene identity embedding for the knockout target.
+Trained and evaluated on a 9-KO + NTC dataset (10 conditions total).
 
-The final model: residual targeting (predict δ from NTC
-mean)
+The final model uses **residual targeting**: the decoder predicts the delta (δ)
+from the NTC mean rather than absolute expression, which substantially improves
+the signal-to-noise ratio of the training target.
 
-## Layout
+### File descriptions
 
 ```text
 model/
-   └── cvae.py                # CVAE_v2 (encoder/decoder), free-bits KL,
-                              # delta->HVG projection helpers
+   └── cvae.py
+       # CVAE_v2 architecture definition plus two helper functions.
+       # Architecture: [ATAC_LSI(50); gene_emb(32)] -> Linear(82->64) + GELU
+       #               -> mu head Linear(64->64), logvar head Linear(64->64)
+       #               -> z (64-D) -> decoder Linear(64->50) -> delta_PCA (50)
+       #               -> project_delta_to_hvg: delta_PCA @ V_delta.T -> (2000,)
+       #               -> add NTC mean to recover absolute HVG expression.
+       # Total learnable parameters: ~13.4k.
+       # free_bits_kl(): KL divergence with a per-dimension free-bits floor
+       #                 (prevents posterior collapse).
 
 scripts/
-   ├── 01_generate_genept.py  # GenePT embeddings for the 9 KO genes (OpenAI)
-   ├── 02_preprocess.py       # RNA -> HVG/PCA, ATAC -> TF-IDF/LSI, GenePT -> 32-D, writes processed/cells.npz
-   ├── 03_train.py            # CVAE training (variants + ablations)
-   ├── 04_run_leave2out.sh    # leave-2-out CV across all C(9,2)=36 KO pairs
-   ├── 05_evaluate.py         # metrics for every checkpoint + 3 baselines
-   ├── 06_plot_main_panels.py # 2x3 metric panels per split
-   ├── 07_per_ko_heatmap.py   # per-KO heatmaps
-   └── 08_distance_split.py   # NTC distance-split robustness experiment
+   ├── 01_generate_genept.py
+   │   # Calls the OpenAI text-embedding-3-large API to generate 1536-D embeddings
+   │   # for each of the 9 KO gene names using the prompt
+   │   # "The gene {X} is a human protein-coding gene." and L2-normalizes each vector.
+   │   # Reads OPENAI_API_KEY from the environment.
+   │   # Output: processed/projectors/genept_embeddings.csv
+   │
+   ├── 02_preprocess.py
+   │   # One-shot preprocessing. Reads the two post-Mixscape h5ad files and:
+   │   #   RNA: normalize_total(1e4) -> log1p -> top 2000 HVG -> PCA(50)
+   │   #        saves pca_loadings_V.npy, pca_gene_means.npy, hvg_list.txt
+   │   #   ATAC: TF-IDF (sublinear_tf, L2 norm) -> TruncatedSVD(51)
+   │   #         -> drop component 1 (depth-correlated) -> 50-D LSI
+   │   #         saves tfidf.pkl, svd.pkl
+   │   #   GenePT: loads genept_embeddings.csv, stacks 9 KO rows + NTC=zero,
+   │   #           PCA-projects to 32-D, forces NTC row back to zero, saves gene_emb_genept.npy
+   │   # Output: processed/cells.npz (all arrays aligned by cell barcode)
+   │
+   ├── 03_train.py
+   │   # Main CVAE training script. Handles all ablation variants and leave-K-out holdouts.
+   │   # Performs 3-way stratified (80/10/10) split by guide_target.
+   │   # Saves a .pt checkpoint + _history.json per run.
+   │
+   ├── 04_run_leave2out.sh
+   │   # Loops over all C(9,2)=36 KO pairs and calls 03_train.py for each,
+   │   # passing --holdout A B to hold out the two KOs from training.
+   │
+   ├── 05_evaluate.py
+   │   # Loads every cvae_*.pt checkpoint plus fits 3 baselines (linear matrix
+   │   # factorization, mean perturbation, NTC identity) and computes a full
+   │   # suite of metrics across all evaluation splits.
+   │   # Output: results/metrics_v2.csv
+   │
+   ├── 06_plot_main_panels.py
+   │   # Reads metrics_v2.csv and produces four 2×3 panel figures (one per split):
+   │   # Δ-PCC top-20 DE | per-cell Δ-PCC top-20 | Expression-PCC
+   │   # Cosine similarity (delta) | MSE top-20 DE | Δ-PCC all 2000 HVGs
+   │   # Output: results/fig_panels_{heldout,test,val_test,all}.png
+   │
+   ├── 07_per_ko_heatmap.py
+   │   # Produces per-KO heatmaps of Δ-PCC and related metrics across model variants.
+   │   # Output: results/fig_per_ko_heatmap_{heldout,test,val_test,all}.png
+   │
+   └── 08_distance_split.py
+       # NTC distance-split robustness experiment.
+       # Splits NTC cells into closest 25%, middle 50%, farthest 25% to the
+       # centroid of all perturbed cells (in 50-D HVG PCA space).
+       # Trains and evaluates two regimes (far_train and close_train) across
+       # three models: only_fix1_CD (CVAE), mean_pert, linear_mf.
+       # Output: results/fig_distance_umap.png
+       #         results/fig_distance_split_box.png
+       #         results/distance_split_metrics.csv
 
 processed/
-   ├── cells.npz              # aligned per-cell arrays (ATAC_LSI, RNA_PCA, RNA_HVG_log1p, label_int, gene embeddings)
-   └── projectors/            # PCA loadings, TF-IDF/SVD, HVG list, GenePT/Geneformer gene-embedding tables
+   ├── cells.npz
+   │   # Aligned per-cell arrays (all indexed by the same cell-barcode order):
+   │   #   barcode          : (N,)      cell barcode strings
+   │   #   guide_target     : (N,)      KO label strings
+   │   #   label_int        : (N,)      integer label index into ko_labels
+   │   #   ATAC_LSI         : (N, 50)   50-D LSI features (encoder input, default)
+   │   #   RNA_PCA          : (N, 50)   50-D RNA PCA features (alternative encoder input)
+   │   #   RNA_HVG_log1p    : (N, 2000) log1p-normalized HVG expression (prediction target)
+   │   #   gene_emb_genept  : (10, 32)  GenePT gene embedding table (one row per KO_LABELS entry)
+   │   #   ko_labels        : (10,)     ordered condition names
+   │   #                      ["NTC","ACTL6A","DMAP1","EP400","EZH2",
+   │   #                       "SMARCA4","SMARCB1","SMARCE1","SUZ12","YY1"]
+   │
+   └── projectors/
+       # genept_embeddings.csv     : raw 1536-D GenePT embeddings (output of script 01)
+       # pca_loadings_V.npy        : (2000, 50) absolute-HVG PCA loadings
+       # pca_gene_means.npy        : (2000,)    per-gene mean used by the HVG PCA
+       # hvg_list.txt              : 2000 highly-variable gene names (one per line)
+       # tfidf.pkl                 : fitted TfidfTransformer for ATAC
+       # svd.pkl                   : fitted TruncatedSVD(51) for ATAC LSI
+       # gene_emb_genept.npy       : (10, 32) projected GenePT embedding table
+       # gene_emb_labels.txt       : condition names in KO_LABELS order
 
-models/                       # trained CVAE checkpoints (.pt) + history
-results/                      # metrics_v2.csv + figures (.png)
-FINAL_MODEL_HANDOFF_minimal/  # OT/moscot baseline outputs (separate)
+models/
+   # cvae_{variant}.pt             : best-val checkpoint (full training set)
+   # cvae_{variant}_loko_{A}_{B}.pt: leave-2-out checkpoint with KOs A and B held out
+   # *_history.json                : per-epoch train/val MSE and KL history
+
+results/
+   ├── metrics_v2.csv
+   ├── fig_panels_{heldout,test,val_test,all}.png
+   ├── fig_per_ko_heatmap_{heldout,test,val_test,all}.png
+   ├── fig_distance_umap.png
+   ├── fig_distance_split_box.png
+   ├── distance_split_metrics.csv
+   └── ot/                           # OT figures (see OT section above)
+
+FINAL_MODEL_HANDOFF_minimal/         # OT/moscot handoff used as CVAE input baseline
 ```
 
-## Data
+### CVAE input data
 
-Cells: 9 epigenetic-regulator KOs (ACTL6A, DMAP1, EP400, EZH2, SMARCA4,
-SMARCB1, SMARCE1, SUZ12, YY1) plus NTC controls. Multimodal RNA + ATAC measured
-on the same cells.
+The same post-Mixscape h5ad files used by the OT notebooks serve as the CVAE
+input. They are not included in this repository. Download them from Google Drive
+and update the `RNA_H5` / `ATAC_H5` paths at the top of `02_preprocess.py`:
 
-## Running the pipeline
+```text
+RNA data  (040_epi_rna_filtered.h5ad):
+  https://drive.google.com/file/d/1-SdwjiF4emCchxUUxcejLPvBZ7ZV_Xfo/view?usp=sharing
+
+ATAC data (040_epi_atac_filtered.h5ad):
+  https://drive.google.com/file/d/1-_d2k-2VgRnzwe63HcuptVht8NlKLbC4/view?usp=sharing
+```
+
+After preprocessing, the pipeline operates entirely from `processed/cells.npz`
+and does not require the original h5ad files (except `05_evaluate.py`, which
+re-reads the RNA h5ad once to augment the linear-MF baseline with any KO genes
+that were not among the top 2000 HVGs).
+
+### CVAE architecture parameters (`model/cvae.py`)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `atac_dim` | 50 | Dimensionality of the encoder input (ATAC LSI or RNA PCA) |
+| `gene_emb_dim` | 32 | Dimensionality of the gene identity embedding |
+| `hidden_dim` | 64 | Width of the encoder trunk linear layer |
+| `latent_dim` | 64 | Dimensionality of the VAE latent space z |
+| `pca_dim` | 50 | Dimensionality of the decoder output (delta in PCA space) |
+
+`free_bits_kl(mu, logvar, tau=0.1)`: the free-bits floor `tau` is the minimum
+KL contribution per latent dimension (in nats). Dimensions below the floor are
+not penalized, which prevents the KL term from collapsing uninformative dimensions
+to exactly zero and masking the reconstruction loss.
+
+### Training parameters (`scripts/03_train.py`)
+
+**Variant flag** (recommended entry point):
+
+| `--variant` | Description |
+|-------------|-------------|
+| `only_fix1_CD` | **Final model.** Residual targeting + z-score target (Fix C) + variance-weighted MSE (Fix D) |
+| `only_fix1` | Residual targeting only |
+| `only_fix1_C` | Residual targeting + z-score target |
+| `only_fix1_D` | Residual targeting + variance-weighted MSE |
+| `only_fix1_mmd` | Residual targeting + MMD distribution-matching auxiliary loss |
+| `only_fix1_mean` | Residual targeting + per-KO mean-alignment auxiliary loss |
+| `baseline` | No fixes (absolute HVG target, standard KL, 32-D latent) |
+| `all_fixes` | All five fixes enabled simultaneously |
+
+**Individual fix flags** (override `--variant` when set explicitly):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--fix1` | 1 | Residual targeting: predict δ from NTC mean instead of absolute HVG |
+| `--fix2` | 0 | Free-bits KL instead of linear β-annealed KL |
+| `--fix3` | 0 | Pseudobulk-std gene weighting in the MSE loss |
+| `--fix4` | 0 | Increase hidden/latent dim from 32 to 64 |
+| `--fix5` | 0 | Cosine LR schedule + longer training (300 epochs, patience 50) |
+
+**Data and split flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--holdout KO1 [KO2 ...]` | `[]` | KO label(s) to exclude from training (for leave-K-out CV) |
+| `--seed` | 0 | Random seed for split and training |
+| `--val_frac` | 0.1 | Fraction of in-distribution cells used for validation |
+| `--test_frac` | 0.1 | Fraction of in-distribution cells used for test |
+| `--input` | `atac` | Encoder input modality: `atac` (ATAC_LSI) or `rna` (RNA_PCA) |
+| `--gene_emb` | `genept` | Gene embedding source: `genept` or `geneformer` |
+
+**Loss and optimization flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kl_weight` | 1.0 | Weight applied to the KL term |
+| `--free_bits_tau` | 0.1 | Free-bits floor τ per latent dimension (nats) |
+| `--target_zscore` | 0 | Fix C: per-gene z-score the δ target using train-set statistics |
+| `--gene_var_weight` | 0 | Fix D: weight MSE by per-gene variance of δ across train cells |
+| `--mmd_weight` | 0.0 | Weight of the MMD² distribution-matching auxiliary loss |
+| `--mean_align_weight` | 0.0 | Weight of the per-KO mean-alignment auxiliary loss |
+
+Default optimizer settings (fix5 OFF): lr=1e-3, epochs=200, patience=20, weight_decay=1e-4, batch_size=64.
+With fix5 ON: lr=3e-4, epochs=300, patience=50, cosine LR decay to lr×0.01.
+
+### Evaluation metrics (`scripts/05_evaluate.py`)
+
+Metrics are computed for each (model, KO gene, split) combination:
+
+| Metric | Description |
+|--------|-------------|
+| `pcc_all` | Pearson correlation of predicted vs. real mean δ across all 2000 HVGs |
+| `pcc_DE{K}` | Pearson correlation restricted to top-K differentially expressed genes (K ∈ 20, 50, 100, 500, 1000) |
+| `mse_all` | MSE on full 2000-D δ vector |
+| `mse_DE{K}` | MSE restricted to top-K DE genes |
+| `expr_pcc_all` | Pearson correlation of predicted vs. real mean absolute expression (all HVGs) |
+| `expr_pcc_DE{K}` | Expression PCC restricted to top-K DE genes |
+| `cos_sim_delta` | Cosine similarity between predicted and real δ vectors |
+| `per_cell_pcc_all` | Average per-NTC-cell PCC of predicted δ vs. the real KO mean δ |
+| `per_cell_pcc_DE{K}` | Per-cell PCC restricted to top-K DE genes |
+| `mmd2_pred_vs_real_DE100` | MMD² between predicted and real KO cell clouds (top-100 DE genes) |
+| `spread_pred` / `spread_real` | Mean per-gene std of predicted / real KO cell clouds |
+
+Evaluation splits:
+
+| Split | Cells used |
+|-------|-----------|
+| `test` | Test cells of that KO (clean held-out, 10%) |
+| `val_test` | Validation + test cells (20%) |
+| `all` | All cells of that KO (inflated; training cells visible) |
+| `heldout` | Cells from a KO that was excluded from training entirely (leave-K-out only) |
+
+### Reproducing the CVAE results
+
+**Before running**: update the hardcoded `ROOT`, `RNA_H5`, and `ATAC_H5` path
+variables at the top of each script to match your local directory structure.
 
 ```bash
-# 0. one-time: GenePT embeddings (needs OPENAI_API_KEY)
+# Step 0 — one-time: generate GenePT gene embeddings (requires OpenAI API key)
+export OPENAI_API_KEY=sk-...
 python scripts/01_generate_genept.py
+# Output: processed/projectors/genept_embeddings.csv
 
-# 1. one-time: build processed/cells.npz + projectors
+# Step 1 — one-time: build the aligned processed/cells.npz and projector files
 python scripts/02_preprocess.py
+# Output: processed/cells.npz, processed/projectors/
 
-# 2a. train final model on all KOs (3-way 80/10/10 split)
-python scripts/03_train.py
+# Step 2a — train the final model on all 9 KOs (3-way 80/10/10 split)
+python scripts/03_train.py --variant only_fix1_CD
+# Output: models/cvae_only_fix1_CD.pt, models/cvae_only_fix1_CD_history.json
 
-# 2b. or hold out a pair and run leave-2-out CV (36 pairs)
-bash scripts/04_run_leave2out.sh                 # default: only_genept atac
-bash scripts/04_run_leave2out.sh only_genept rna # RNA-input variant
+# Step 2b — run leave-2-out CV across all C(9,2)=36 KO pairs (~6 min on CPU)
+bash scripts/04_run_leave2out.sh
+# Output: models/cvae_only_fix1_CD_loko_{A}_{B}.pt for all 36 pairs
 
-# 3. metrics for every checkpoint in models/ + linear/mean/NTC baselines
+# Step 3 — compute metrics for every checkpoint + 3 baselines
 python scripts/05_evaluate.py
+# Output: results/metrics_v2.csv
 
-# 4. figures
+# Step 4 — generate all figures
 python scripts/06_plot_main_panels.py
+# Output: results/fig_panels_{heldout,test,val_test,all}.png
+
 python scripts/07_per_ko_heatmap.py
-python scripts/08_distance_split.py              # separate distance-split experiment
+# Output: results/fig_per_ko_heatmap_{heldout,test,val_test,all}.png
+
+python scripts/08_distance_split.py
+# Output: results/fig_distance_umap.png, fig_distance_split_box.png,
+#         results/distance_split_metrics.csv
 ```
+
+For a quick test run of just the model training, use a reduced epoch count:
+
+```bash
+python scripts/03_train.py --variant only_fix1_CD --fix5 0
+# Trains in under 2 minutes on CPU; the submitted checkpoint already contains
+# the full trained model so retraining is not required to inspect results.
+```
+
+The submitted `results/` directory already contains the generated figures and
+`metrics_v2.csv`, and the submitted `models/` directory already contains trained
+checkpoints, so it is not necessary to rerun the full pipeline to inspect the
+final report outputs.
+
+### CVAE system requirements and dependencies
+
+**Hardware:** CPU is sufficient for all steps. Steps 0–2 and step 5 are more
+memory-intensive (ATAC SVD on 524k peaks; step 5 reloads the full RNA h5ad).
+A node with ≥32 GB RAM is recommended. GPU is optional; training on CPU takes
+under 2 minutes per run for the default hyperparameters.
+
+**Python version:** 3.9 or higher.
+
+**Required packages:**
+
+```text
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+scanpy
+anndata
+torch
+openai          # step 0 only (GenePT embeddings)
+umap-learn      # step 4 only (08_distance_split.py UMAP figure)
+```
+
+Install with:
+
+```bash
+pip install numpy pandas scipy scikit-learn matplotlib scanpy anndata torch openai umap-learn
+```
+
+The CVAE scripts were developed and run on a Linux HPC cluster (Python 3.10,
+PyTorch 2.x). No special CUDA installation is required.
 
 ---
