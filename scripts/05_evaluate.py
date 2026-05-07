@@ -32,7 +32,6 @@ from model.cvae import CVAE_v2, project_delta_to_hvg
 KO_LABELS = ["NTC", "ACTL6A", "DMAP1", "EP400", "EZH2",
              "SMARCA4", "SMARCB1", "SMARCE1", "SUZ12", "YY1"]
 KO_GENES = KO_LABELS[1:]
-HELDOUT_KOS = ["EZH2", "SMARCA4"]
 LINEAR_K = 16
 
 
@@ -78,26 +77,6 @@ def per_cell_pcc(pred_cells, real_mean, k_or_idx, top_k_idx=None):
     num = Xc[valid] @ yc                                 # (B_valid,)
     pccs = num / (Xn[valid] * yn)
     return float(pccs.mean())
-
-
-def mmd2_rbf(X, Y, sigmas=(0.5, 1.0, 2.0, 5.0), max_n=200, seed=0):
-    """Numpy multi-scale RBF MMD². Subsamples to <= max_n per side for speed."""
-    if X.shape[0] < 2 or Y.shape[0] < 2:
-        return float("nan")
-    rng = np.random.RandomState(seed)
-    if X.shape[0] > max_n:
-        X = X[rng.choice(X.shape[0], max_n, replace=False)]
-    if Y.shape[0] > max_n:
-        Y = Y[rng.choice(Y.shape[0], max_n, replace=False)]
-    from scipy.spatial.distance import cdist
-    XX = cdist(X, X, "sqeuclidean")
-    YY = cdist(Y, Y, "sqeuclidean")
-    XY = cdist(X, Y, "sqeuclidean")
-    out = 0.0
-    for sig in sigmas:
-        s2 = 2.0 * (sig ** 2)
-        out += np.exp(-XX / s2).mean() + np.exp(-YY / s2).mean() - 2 * np.exp(-XY / s2).mean()
-    return out / len(sigmas)
 
 
 DE_KS = (20, 50, 100, 500, 1000)   # K values for top-K DE PCC
@@ -258,7 +237,7 @@ def main():
     # ---- helper to compute metrics for one (model_name, ko, split) ----
     def emit(model_name, ko, split, n_real, delta_real, delta_pred,
              real_ko_profile=None, pred_ko_profile=None,
-             pred_cells=None, real_cells=None, real_ntc_mean=None):
+             pred_cells=None, real_ntc_mean=None):
         """delta_real, delta_pred: 2000-D delta vectors (population mean).
         real_ko_profile, pred_ko_profile: 2000-D RAW expression vectors.
         pred_cells: (B, 2000) per-cell CVAE predictions (HVG space).
@@ -291,30 +270,17 @@ def main():
         row["cos_sim_expr"]   = (cos_sim(real_ko_profile, pred_ko_profile)
                                  if real_ko_profile is not None else float("nan"))
 
-        # ---- cell-level metrics ----
-        # Per-cell delta-PCC (each predicted cell's delta-from-NTC vs the real KO mean delta)
+        # ---- per-cell metrics ----
         if pred_cells is not None and real_ntc_mean is not None:
             pred_deltas = pred_cells - real_ntc_mean[None, :]   # (B, 2000)
             for K in DE_KS:
                 idx = np.argsort(np.abs(delta_real))[-K:]
                 row[f"per_cell_pcc_DE{K}"] = per_cell_pcc(pred_deltas, delta_real, K, idx)
             row["per_cell_pcc_all"] = per_cell_pcc(pred_deltas, delta_real, None, None)
-            row["spread_pred"] = float(pred_cells.std(axis=0).mean())
         else:
             for K in DE_KS:
                 row[f"per_cell_pcc_DE{K}"] = float("nan")
             row["per_cell_pcc_all"] = float("nan")
-            row["spread_pred"] = float("nan")
-
-        # MMD² between predicted cell cloud and real KO cell cloud (in PCA(50) of HVGs to keep tractable)
-        if pred_cells is not None and real_cells is not None and len(real_cells) >= 2:
-            # Restrict to top-100 DE genes for stable MMD (full 2000-D MMD is noisy)
-            idx_de = np.argsort(np.abs(delta_real))[-100:]
-            row["mmd2_pred_vs_real_DE100"] = mmd2_rbf(pred_cells[:, idx_de], real_cells[:, idx_de])
-            row["spread_real"] = float(real_cells.std(axis=0).mean())
-        else:
-            row["mmd2_pred_vs_real_DE100"] = float("nan")
-            row["spread_real"] = float("nan")
 
         rows.append(row)
 
@@ -368,8 +334,7 @@ def main():
                 delta_pred = pred_mean - real_ntc_mean
                 emit(cp.stem, ko, split_name, len(ko_eval_idx), delta_real, delta_pred,
                      real_ko_profile=real_ko_mean, pred_ko_profile=pred_mean,
-                     pred_cells=pred, real_cells=hvg[ko_eval_idx],
-                     real_ntc_mean=real_ntc_mean)
+                     pred_cells=pred, real_ntc_mean=real_ntc_mean)
 
     # ---- baselines on the same split definitions ----
     # We use the train_idx from one full and one loko checkpoint to define splits
@@ -393,34 +358,28 @@ def main():
                 if len(ko_eval) == 0 or len(ntc_eval) == 0: continue
                 real_ko = hvg[ko_eval].mean(0); real_ntc = hvg[ntc_eval].mean(0)
                 delta_real = real_ko - real_ntc
-                real_cells_ko = hvg[ko_eval]
-                ntc_cells_split = hvg[ntc_eval]    # actual NTC cells in this split
-                # PER-CELL BASELINE PREDICTIONS:
-                # each control cell c -> predicted KO cell = c's actual RNA + baseline delta
+                ntc_cells_split = hvg[ntc_eval]
                 # linear MF
                 pred_lin = linear_mf_pred(G_full, W_full, b_full, ko, full_gene_to_idx)
                 if pred_lin is not None:
-                    delta_lin = pred_lin - real_ntc                          # one delta vector
-                    pred_cells_lin = ntc_cells_split + delta_lin[None, :]    # per-cell: NTC cell + delta
+                    delta_lin      = pred_lin - real_ntc
+                    pred_cells_lin = ntc_cells_split + delta_lin[None, :]
                     emit("linear_mf_full", ko, split_name, len(ko_eval),
                          delta_real, delta_lin,
                          real_ko_profile=real_ko, pred_ko_profile=pred_lin,
-                         pred_cells=pred_cells_lin, real_cells=real_cells_ko,
-                         real_ntc_mean=real_ntc)
+                         pred_cells=pred_cells_lin, real_ntc_mean=real_ntc)
                 # mean perturbations
-                delta_mp = pert_full - real_ntc
+                delta_mp      = pert_full - real_ntc
                 pred_cells_mp = ntc_cells_split + delta_mp[None, :]
                 emit("mean_pert_full", ko, split_name, len(ko_eval),
                      delta_real, delta_mp,
                      real_ko_profile=real_ko, pred_ko_profile=pert_full,
-                     pred_cells=pred_cells_mp, real_cells=real_cells_ko,
-                     real_ntc_mean=real_ntc)
-                # NTC identity (predicts NTC profile -> per-cell pred = NTC cell itself; delta=0)
+                     pred_cells=pred_cells_mp, real_ntc_mean=real_ntc)
+                # NTC identity
                 emit("ntc_identity", ko, split_name, len(ko_eval),
                      delta_real, np.zeros_like(delta_real),
                      real_ko_profile=real_ko, pred_ko_profile=real_ntc,
-                     pred_cells=ntc_cells_split, real_cells=real_cells_ko,
-                     real_ntc_mean=real_ntc)
+                     pred_cells=ntc_cells_split, real_ntc_mean=real_ntc)
 
     # ---- Per-loko-checkpoint baselines: same 7 training KOs the CVAE saw,
     #      evaluated on EVERY split (heldout/test/val_test/all) per pair ----
@@ -479,33 +438,29 @@ def main():
                 real_ko  = hvg[ko_eval].mean(0)
                 real_ntc = hvg[ntc_eval].mean(0)
                 delta_real = real_ko - real_ntc
-                real_cells_ko    = hvg[ko_eval]
-                ntc_cells_split  = hvg[ntc_eval]   # used for per-cell baseline predictions
+                ntc_cells_split = hvg[ntc_eval]
 
                 # linear MF
                 pred_lin = linear_mf_pred(G_l, W_l, b_l, ko, full_gene_to_idx)
                 if pred_lin is not None:
-                    delta_lin = pred_lin - real_ntc
+                    delta_lin      = pred_lin - real_ntc
                     pred_cells_lin = ntc_cells_split + delta_lin[None, :]
                     emit(f"linear_mf_loko{tag_suffix}", ko, split_name, len(ko_eval),
                          delta_real, delta_lin,
                          real_ko_profile=real_ko, pred_ko_profile=pred_lin,
-                         pred_cells=pred_cells_lin, real_cells=real_cells_ko,
-                         real_ntc_mean=real_ntc)
+                         pred_cells=pred_cells_lin, real_ntc_mean=real_ntc)
                 # mean_pert
-                delta_mp = pert_l - real_ntc
+                delta_mp      = pert_l - real_ntc
                 pred_cells_mp = ntc_cells_split + delta_mp[None, :]
                 emit(f"mean_pert_loko{tag_suffix}", ko, split_name, len(ko_eval),
                      delta_real, delta_mp,
                      real_ko_profile=real_ko, pred_ko_profile=pert_l,
-                     pred_cells=pred_cells_mp, real_cells=real_cells_ko,
-                     real_ntc_mean=real_ntc)
-                # ntc_identity (universal)
+                     pred_cells=pred_cells_mp, real_ntc_mean=real_ntc)
+                # ntc_identity
                 emit(f"ntc_identity_loko{tag_suffix}", ko, split_name, len(ko_eval),
                      delta_real, np.zeros_like(delta_real),
                      real_ko_profile=real_ko, pred_ko_profile=real_ntc,
-                     pred_cells=ntc_cells_split, real_cells=real_cells_ko,
-                     real_ntc_mean=real_ntc)
+                     pred_cells=ntc_cells_split, real_ntc_mean=real_ntc)
 
     df = pd.DataFrame(rows)
     out_csv = out_dir / "metrics_v2.csv"

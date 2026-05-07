@@ -377,8 +377,6 @@ Metrics are computed for each (model, KO gene, split) combination:
 | `cos_sim_delta` | Cosine similarity between predicted and real δ vectors |
 | `per_cell_pcc_all` | Average per-NTC-cell PCC of predicted δ vs. the real KO mean δ |
 | `per_cell_pcc_DE{K}` | Per-cell PCC restricted to top-K DE genes |
-| `mmd2_pred_vs_real_DE100` | MMD² between predicted and real KO cell clouds (top-100 DE genes) |
-| `spread_pred` / `spread_real` | Mean per-gene std of predicted / real KO cell clouds |
 
 Evaluation splits:
 

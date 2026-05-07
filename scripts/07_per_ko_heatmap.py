@@ -2,12 +2,10 @@
 """
 07_per_ko_heatmap.py
 
-"Confusion-matrix style" heatmaps: which (KO × model) combinations are
-accurate, which fail. One heatmap per metric, one figure per split.
+Heatmaps of per-KO prediction accuracy for each model and split.
 
-Rows: model variants  (only_fix1, mean_pert, linear_mf)
+Rows: CVAE (ATAC), CVAE (RNA), Mean Pert, Linear MF
 Cols: 9 KOs
-Cell value: mean of metric across leave-2-out pairs that include this KO in this split.
 
 Output (per split):
   results/fig_per_ko_heatmap_heldout.png
@@ -41,28 +39,9 @@ OUT = ROOT / args.out_dir
 OUT.mkdir(parents=True, exist_ok=True)
 df = pd.read_csv(OUT / "metrics_v2.csv")
 
-GENE_EMB_TAGS = ("geneformer", "genept")
-INPUT_TAGS    = ("rna",)                                 # ATAC = default (no suffix)
-KNOWN_VARIANTS = ["only_fix1_mmd", "only_fix1_mean",
-                  "only_fix1_CD", "only_fix1_C", "only_fix1_D", "only_fix1",
-                  "all_fixes", "baseline"]
-
 def label(m):
     if m.startswith("cvae_"):
-        rest = m[len("cvae_"):]
-        input_suffix = ""
-        for tag in INPUT_TAGS:
-            if rest.endswith(f"_{tag}"):
-                input_suffix = f"_{tag}"
-                rest = rest[: -len(f"_{tag}")]
-                break
-        for tag in GENE_EMB_TAGS:
-            if rest.endswith(f"_{tag}"):
-                rest = rest[: -len(f"_{tag}")]
-        for v in sorted(KNOWN_VARIANTS, key=len, reverse=True):
-            if rest.startswith(v):
-                return v + input_suffix
-        return rest + input_suffix
+        return "CVAE (RNA)" if "_rna" in m else "CVAE (ATAC)"
     if "linear_mf" in m:    return "linear_mf"
     if "mean_pert" in m:    return "mean_pert"
     if "ntc_identity" in m: return "ntc_identity"
@@ -70,14 +49,8 @@ def label(m):
 
 df["label"] = df["model"].apply(label)
 
-ROW_ORDER = ["only_fix1_CD", "only_fix1_CD_rna", "mean_pert", "linear_mf"]
-DISPLAY = {
-    "only_fix1_CD":     "CVAE (ATAC)",
-    "only_fix1_CD_rna": "CVAE (RNA)",
-    "mean_pert":      "Mean Pert",
-    "linear_mf":      "Linear MF",
-    "ntc_identity":   "NTC identity",
-}
+ROW_ORDER = ["CVAE (ATAC)", "CVAE (RNA)", "mean_pert", "linear_mf"]
+DISPLAY   = {v: v for v in ROW_ORDER}
 KOS = ["ACTL6A", "DMAP1", "EP400", "EZH2", "SMARCA4", "SMARCB1", "SMARCE1", "SUZ12", "YY1"]
 
 METRICS = [

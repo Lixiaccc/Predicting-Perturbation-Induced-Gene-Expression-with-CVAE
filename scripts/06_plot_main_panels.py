@@ -7,9 +7,6 @@ Each figure has a 2x3 panel of metrics:
     Δ-PCC top-20 DE  |  per-cell Δ-PCC top-20  |  Expression-PCC (raw)
     Cosine similarity (delta) | MSE on top-20 DE | Δ-PCC across all 2000 HVGs
 
-X-axis of each panel: model variants (only_fix1, only_fix1_mean, mean_pert,
-linear_mf, ntc_identity). One box per (model, split).
-
 Output:
   results/fig_panels_heldout.png
   results/fig_panels_test.png
@@ -41,29 +38,9 @@ OUT = ROOT / args.out_dir
 OUT.mkdir(parents=True, exist_ok=True)
 df = pd.read_csv(OUT / "metrics_v2.csv")
 
-GENE_EMB_TAGS = ("geneformer", "genept")
-INPUT_TAGS    = ("rna",)                                 # ATAC = default (no suffix)
-KNOWN_VARIANTS = ["only_fix1_mmd", "only_fix1_mean",
-                  "only_fix1_CD", "only_fix1_C", "only_fix1_D", "only_fix1",
-                  "all_fixes", "baseline"]
-
 def label(m):
     if m.startswith("cvae_"):
-        rest = m[len("cvae_"):]
-        # peel input-modality suffix first (rna), then gene_emb suffix (geneformer)
-        input_suffix = ""
-        for tag in INPUT_TAGS:
-            if rest.endswith(f"_{tag}"):
-                input_suffix = f"_{tag}"
-                rest = rest[: -len(f"_{tag}")]
-                break
-        for tag in GENE_EMB_TAGS:
-            if rest.endswith(f"_{tag}"):
-                rest = rest[: -len(f"_{tag}")]
-        for v in sorted(KNOWN_VARIANTS, key=len, reverse=True):
-            if rest.startswith(v):
-                return v + input_suffix
-        return rest + input_suffix
+        return "CVAE (RNA)" if "_rna" in m else "CVAE (ATAC)"
     if "linear_mf" in m:    return "linear_mf"
     if "mean_pert" in m:    return "mean_pert"
     if "ntc_identity" in m: return "ntc_identity"
@@ -71,23 +48,16 @@ def label(m):
 
 df["label"] = df["model"].apply(label)
 
-# Models to compare (CVAE-ATAC + CVAE-RNA + 3 baselines)
-PLOT_ORDER = ["only_fix1_CD", "only_fix1_CD_rna", "mean_pert", "linear_mf", "ntc_identity"]
+PLOT_ORDER = ["CVAE (ATAC)", "CVAE (RNA)", "mean_pert", "linear_mf", "ntc_identity"]
 PLOT_ORDER = [v for v in PLOT_ORDER if v in df["label"].unique()]
 COLORS = {
-    "only_fix1_CD":     "#2E86AB",                      # blue
-    "only_fix1_CD_rna": "#9D4EDD",                      # purple
-    "mean_pert":        "#3D5A40",
-    "linear_mf":        "#C73E1D",
-    "ntc_identity":     "#888888",
+    "CVAE (ATAC)":  "#2E86AB",
+    "CVAE (RNA)":   "#9D4EDD",
+    "mean_pert":    "#3D5A40",
+    "linear_mf":    "#C73E1D",
+    "ntc_identity": "#888888",
 }
-DISPLAY = {
-    "only_fix1_CD":     "CVAE (ATAC)",
-    "only_fix1_CD_rna": "CVAE (RNA)",
-    "mean_pert":        "Mean Pert",
-    "linear_mf":        "Linear MF",
-    "ntc_identity":     "NTC identity",
-}
+DISPLAY = {v: v for v in PLOT_ORDER}
 
 METRICS = [
     # (column,            panel title,                                            ylim,         lower_better)

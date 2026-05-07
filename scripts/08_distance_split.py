@@ -13,7 +13,7 @@ NTC distance split experiment:
         Regime B "close_train": train on (closest 25% NTC + all KO);
                                 inference on farthest 25% NTC.
   - For each regime, compare 3 methods:
-        only_fix1 (CVAE)
+        CVAE (ATAC) and CVAE (RNA)
         mean_pert (training pseudobulk average)
         linear_mf (Y_hat = G W P^T + b)
 
@@ -62,33 +62,33 @@ def topk_pcc(d_real, d_pred, k=20):
     return pcc_safe(d_real[idx], d_pred[idx])
 
 
-# ============================================================ inline CVAE training (only_fix1_CD: Fix C + Fix D)
-def train_only_fix1_CD(train_idx, val_idx, atac, hvg, label, gtable, ntc_mean,
-                       epochs=200, patience=20, lr=1e-3, batch=64, seed=0):
-    """Train CVAE_v2 with Fix C (z-score target) + Fix D (variance-weighted MSE).
+# ============================================================ inline CVAE training
+def train_cvae(train_idx, val_idx, input_feat, hvg, label, gtable, ntc_mean,
+               epochs=200, patience=20, lr=1e-3, batch=64, seed=0):
+    """Train CVAE_v2 on the given input features (ATAC LSI or RNA PCA).
     Returns (model, V_delta, mu_delta, sigma_delta, gene_weight, best_val_mse)."""
     delta_target = (hvg - ntc_mean).astype(np.float32)
 
-    # Fix C: z-score per gene using TRAIN-cells stats
+    # z-score per gene using train-cells stats
     mu_delta    = delta_target[train_idx].mean(axis=0).astype(np.float32)
     sigma_delta = (delta_target[train_idx].std(axis=0) + 1e-3).astype(np.float32)
     target_z    = ((delta_target - mu_delta) / sigma_delta).astype(np.float32)
 
-    # PCA on z-scored target (V_delta lives in z-scored space)
+    # PCA on z-scored target
     pca = PCA(n_components=50, random_state=0)
     pca.fit(target_z[train_idx])
     V_delta = pca.components_.T.astype(np.float32)
-    V_T = torch.from_numpy(V_delta.T).float()                       # (50, 2000)
+    V_T     = torch.from_numpy(V_delta.T).float()                   # (50, 2000)
 
-    # Fix D: per-gene variance weight (mean-1 normalized)
-    gw = (delta_target[train_idx].var(axis=0) + 1e-3).astype(np.float32)
+    # per-gene variance weight
+    gw          = (delta_target[train_idx].var(axis=0) + 1e-3).astype(np.float32)
     gene_weight = gw / gw.mean()
 
-    target_t  = torch.from_numpy(target_z).float()
-    atac_t    = torch.from_numpy(atac).float()
-    label_t   = torch.from_numpy(label).long()
-    gtable_t  = torch.from_numpy(gtable).float()
-    w_t       = torch.from_numpy(gene_weight).float()
+    target_t = torch.from_numpy(target_z).float()
+    atac_t   = torch.from_numpy(input_feat).float()
+    label_t  = torch.from_numpy(label).long()
+    gtable_t = torch.from_numpy(gtable).float()
+    w_t      = torch.from_numpy(gene_weight).float()
 
     np.random.seed(seed); torch.manual_seed(seed)
     model = CVAE_v2(hidden_dim=32, latent_dim=32)
@@ -126,18 +126,18 @@ def train_only_fix1_CD(train_idx, val_idx, atac, hvg, label, gtable, ntc_mean,
     return model, V_delta, mu_delta, sigma_delta, gene_weight, best_val
 
 
-def cvae_predict_hvg_CD(model, V_delta, mu_delta, sigma_delta,
-                        ntc_atac, ko_int, gtable, ntc_mean):
-    """Run Fix CD CVAE inference; returns (B, 2000) absolute HVG predictions."""
+def cvae_predict_hvg(model, V_delta, mu_delta, sigma_delta,
+                     ntc_input, ko_int, gtable, ntc_mean):
+    """Run CVAE inference; returns (B, 2000) absolute HVG predictions."""
     V_T = torch.from_numpy(V_delta.T).float()
     model.eval()
     with torch.no_grad():
-        atac_t = torch.from_numpy(ntc_atac).float()
-        gemb = torch.from_numpy(gtable[ko_int][None, :]).float().expand(len(atac_t), -1)
-        pca_pred, _, _ = model(atac_t, gemb, stochastic=False)
-        pred_target = project_delta_to_hvg(pca_pred, V_T).numpy()    # z-scored delta
-    pred_delta = pred_target * sigma_delta + mu_delta                 # un-z-score (Fix C)
-    return pred_delta + ntc_mean                                       # absolute HVG
+        x_t  = torch.from_numpy(ntc_input).float()
+        gemb = torch.from_numpy(gtable[ko_int][None, :]).float().expand(len(x_t), -1)
+        pca_pred, _, _ = model(x_t, gemb, stochastic=False)
+        pred_z = project_delta_to_hvg(pca_pred, V_T).numpy()
+    pred_delta = pred_z * sigma_delta + mu_delta                      # un-z-score
+    return pred_delta + ntc_mean                                      # absolute HVG
 
 
 # ============================================================ baselines
@@ -288,17 +288,17 @@ def main():
         print(f"  NTC for inference = {len(test_ntc)}")
         print(f"  ntc_train_mean computed from {len(train_ntc)} NTC cells")
 
-        # ---- train CVAE-ATAC (Fix CD) ----
+        # ---- train CVAE (ATAC) ----
         t0 = time.time()
-        print("  [train] CVAE (ATAC input) ...")
-        atac_model, atac_V, atac_mu, atac_sig, _, atac_val = train_only_fix1_CD(
+        print("  [train] CVAE (ATAC) ...")
+        atac_model, atac_V, atac_mu, atac_sig, _, atac_val = train_cvae(
             train_idx, val_idx, atac, hvg, label_int, gtable_np, ntc_train_mean)
         print(f"    done in {time.time()-t0:.1f}s, best val_mse={atac_val:.5f}")
 
-        # ---- train CVAE-RNA (Fix CD) ----
+        # ---- train CVAE (RNA) ----
         t0 = time.time()
-        print("  [train] CVAE (RNA input) ...")
-        rna_model, rna_V, rna_mu, rna_sig, _, rna_val = train_only_fix1_CD(
+        print("  [train] CVAE (RNA) ...")
+        rna_model, rna_V, rna_mu, rna_sig, _, rna_val = train_cvae(
             train_idx, val_idx, rna_pca, hvg, label_int, gtable_np, ntc_train_mean)
         print(f"    done in {time.time()-t0:.1f}s, best val_mse={rna_val:.5f}")
 
@@ -332,13 +332,13 @@ def main():
                 })
 
             # CVAE (ATAC)
-            pred_atac = cvae_predict_hvg_CD(atac_model, atac_V, atac_mu, atac_sig,
-                                             test_atac, ko_int, gtable_np, ntc_train_mean)
-            emit("only_fix1_CD", pred_atac.mean(0), pred_atac)
+            pred_atac = cvae_predict_hvg(atac_model, atac_V, atac_mu, atac_sig,
+                                         test_atac, ko_int, gtable_np, ntc_train_mean)
+            emit("CVAE (ATAC)", pred_atac.mean(0), pred_atac)
             # CVAE (RNA)
-            pred_rna = cvae_predict_hvg_CD(rna_model, rna_V, rna_mu, rna_sig,
-                                            test_rna_pca, ko_int, gtable_np, ntc_train_mean)
-            emit("only_fix1_CD_rna", pred_rna.mean(0), pred_rna)
+            pred_rna = cvae_predict_hvg(rna_model, rna_V, rna_mu, rna_sig,
+                                        test_rna_pca, ko_int, gtable_np, ntc_train_mean)
+            emit("CVAE (RNA)", pred_rna.mean(0), pred_rna)
             # linear_mf
             p_lin = linear_mf_pred(ko)
             if p_lin is not None:
@@ -357,13 +357,13 @@ def main():
     print(f"\n[saved] {out_csv}")
 
     # box plot of pcc_DE20 by (regime, model)
-    PLOT_ORDER = ["only_fix1_CD", "only_fix1_CD_rna", "mean_pert", "linear_mf"]
-    DISPLAY = {"only_fix1_CD": "CVAE (ATAC)", "only_fix1_CD_rna": "CVAE (RNA)",
-               "mean_pert": "Mean Pert", "linear_mf": "Linear MF"}
-    REGIMES = ["far_train", "close_train"]
-    REGIME_LABEL = {"far_train": "Train on far 25%, test on close 25%",
+    PLOT_ORDER = ["CVAE (ATAC)", "CVAE (RNA)", "mean_pert", "linear_mf"]
+    DISPLAY    = {"CVAE (ATAC)": "CVAE (ATAC)", "CVAE (RNA)": "CVAE (RNA)",
+                  "mean_pert": "Mean Pert", "linear_mf": "Linear MF"}
+    REGIMES      = ["far_train", "close_train"]
+    REGIME_LABEL = {"far_train":   "Train on far 25%, test on close 25%",
                     "close_train": "Train on close 25%, test on far 25%"}
-    COLORS = {"only_fix1_CD": "#2E86AB", "only_fix1_CD_rna": "#9D4EDD",
+    COLORS = {"CVAE (ATAC)": "#2E86AB", "CVAE (RNA)": "#9D4EDD",
               "mean_pert": "#3D5A40", "linear_mf": "#C73E1D"}
     HATCH = {"far_train": "", "close_train": "//"}
 
