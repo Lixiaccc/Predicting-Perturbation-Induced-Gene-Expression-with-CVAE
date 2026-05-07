@@ -4,16 +4,18 @@
 
 The optimal transport (OT) portion of the project is contained in two Google Colab notebooks under `notebooks/`. These notebooks were developed and run in Colab, and the submitted `.ipynb` files should still contain the executed outputs, figures, and summary tables used for the report. If rerunning them, update the Google Drive / repository paths near the top of each notebook to match your local setup.
 
+For a quick test of the OT results we recommend using the moscot_RNA_only.ipynb since it is far smaller and quicker to run. The grid parameters are at the top of the notebook and can be reduced further to quicken it further.
+
 ```text
 notebooks/
-   ├── moscot_RNA_only_end_to_end_grid_handoff_COMMON_EVAL.ipynb
+   ├── moscot_RNA_only.ipynb
    │   # RNA-only moscot grid search.
    │   # Fits OT plans from NTC cells to each KO population across epsilon/tau settings.
    │   # Uses common RNA PCA evaluation based on the saved transport plan barycenter.
    │   # Produces the RNA-only hyperparameter heatmap and the final OT handoff used by the CVAE.
    │   # The notebook output cells should contain the final heatmap and summary tables.
    │
-   └── moscot_multimodal_FINAL_DEFENSIBLE_COMMON_EVAL_WITH_SANITY_CHECKS_v3_RNA_MATCHED.ipynb
+   └── moscot_multimodal.ipynb
        # Multimodal OT comparison.
        # Compares RNA-only, ATAC LSI-only, RNA PCA + ATAC LSI concatenation,
        # GW with ATAC geometry, and FGW variants using ATAC/RNA geometry and gene activity.
