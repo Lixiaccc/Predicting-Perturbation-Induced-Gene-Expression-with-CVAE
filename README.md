@@ -73,11 +73,17 @@ results/ot/
    ├── moscot_RNA_only_all_KO_summary.csv
    │   # RNA-only OT summary table across perturbations and hyperparameter settings.
    │
-   ├── multimodal_common_eval_summary.csv
-   │   # Common-evaluation summary table for multimodal OT method families.
+   ├── common_space_reevaluation_all_methods.csv
+   │   # Common-evaluation summary table for all multimodal OT method-family runs.
    │
-   └── selected_method_family_configs.csv
-       # One selected configuration per OT method family.
+   ├── Figure1_COMMON_RNA_PCA_eval_single_best_config_per_method_family_MMD2_ratio_concat_ATACw_ge_0.25_with_RNA_only_selected_configs.csv
+   │   # Selected configuration table for the main RNA PCA multimodal heatmap.
+   │
+   ├── Figure1_COMMON_RNA_PCA_eval_single_best_config_per_method_family_MMD2_ratio_concat_ATACw_ge_0.25_with_RNA_only_selected_KO_level_rows.csv
+   │   # KO-level rows used in the main RNA PCA multimodal heatmap.
+   │
+   └── Figure1_COMMON_RNA_PCA_eval_single_best_config_per_method_family_MMD2_ratio_concat_ATACw_ge_0.25_with_RNA_only_heatmap_matrix.csv
+       # Matrix corresponding to the main RNA PCA multimodal heatmap.
 ```
 
 ### OT parameters
