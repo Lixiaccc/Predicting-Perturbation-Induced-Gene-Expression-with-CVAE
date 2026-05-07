@@ -334,25 +334,15 @@ to exactly zero and masking the reconstruction loss.
 
 ### Training parameters (`scripts/03_train.py`)
 
-**Variant flag** (sets the residual-targeting fix and related options):
+The final model uses **residual targeting** (predict δ from NTC mean), with
+**per-gene z-scoring of the δ target** and **variance-weighted MSE**. The
+corresponding flags are:
 
-| `--variant` | Description |
-|-------------|-------------|
-| `only_fix1` | **Final model base.** Residual targeting (predict δ from NTC mean). Combine with Fix C and Fix D flags below for the full final model. |
-| `only_fix1_mmd` | Residual targeting + MMD distribution-matching auxiliary loss |
-| `only_fix1_mean` | Residual targeting + per-KO mean-alignment auxiliary loss |
-| `baseline` | No fixes (absolute HVG target, standard KL, 32-D latent) |
-| `all_fixes` | All five fixes enabled simultaneously |
-
-**Individual fix flags** (override `--variant` when set explicitly):
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--fix1` | 1 | Residual targeting: predict δ from NTC mean instead of absolute HVG |
-| `--fix2` | 0 | Free-bits KL instead of linear β-annealed KL |
-| `--fix3` | 0 | Pseudobulk-std gene weighting in the MSE loss |
-| `--fix4` | 0 | Increase hidden/latent dim from 32 to 64 |
-| `--fix5` | 0 | Cosine LR schedule + longer training (300 epochs, patience 50) |
+| Flag | Value | Description |
+|------|-------|-------------|
+| `--fix1` | 1 | Residual targeting: predict δ from NTC mean instead of absolute HVG expression |
+| `--target_zscore` | 1 | Per-gene z-score the δ target using train-set mean and std |
+| `--gene_var_weight` | 1 | Weight the MSE loss by per-gene variance of δ across train cells |
 
 **Data and split flags:**
 
@@ -365,19 +355,16 @@ to exactly zero and masking the reconstruction loss.
 | `--input` | `atac` | Encoder input modality: `atac` (ATAC_LSI) or `rna` (RNA_PCA) |
 | `--gene_emb` | `genept` | Gene embedding source: `genept` or `geneformer` |
 
-**Loss and optimization flags:**
+**Other loss and optimization flags:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--kl_weight` | 1.0 | Weight applied to the KL term |
 | `--free_bits_tau` | 0.1 | Free-bits floor τ per latent dimension (nats) |
-| `--target_zscore` | 0 | **Fix C:** per-gene z-score the δ target using train-set statistics (set to 1 for final model) |
-| `--gene_var_weight` | 0 | **Fix D:** weight MSE by per-gene variance of δ across train cells (set to 1 for final model) |
 | `--mmd_weight` | 0.0 | Weight of the MMD² distribution-matching auxiliary loss |
 | `--mean_align_weight` | 0.0 | Weight of the per-KO mean-alignment auxiliary loss |
 
-Default optimizer settings (fix5 OFF): lr=1e-3, epochs=200, patience=20, weight_decay=1e-4, batch_size=64.
-With fix5 ON: lr=3e-4, epochs=300, patience=50, cosine LR decay to lr×0.01.
+Default optimizer settings: lr=1e-3, epochs=200, patience=20, weight_decay=1e-4, batch_size=64.
 
 ### Evaluation metrics (`scripts/05_evaluate.py`)
 
@@ -422,15 +409,12 @@ python scripts/02_preprocess.py
 # Output: processed/cells.npz, processed/projectors/
 
 # Step 2a — train the final model on all 9 KOs (3-way 80/10/10 split)
-#   --variant only_fix1  : residual targeting (predict δ from NTC mean)
-#   --target_zscore 1    : Fix C — per-gene z-score the δ target
-#   --gene_var_weight 1  : Fix D — variance-weighted MSE on δ
-python scripts/03_train.py --variant only_fix1 --target_zscore 1 --gene_var_weight 1
-# Output: models/cvae_only_fix1.pt, models/cvae_only_fix1_history.json
+python scripts/03_train.py --fix1 1 --target_zscore 1 --gene_var_weight 1
+# Output: models/cvae_*.pt, models/cvae_*_history.json
 
 # Step 2b — run leave-2-out CV across all C(9,2)=36 KO pairs (~6 min on CPU)
 bash scripts/04_run_leave2out.sh
-# Output: models/cvae_only_fix1_loko_{A}_{B}.pt for all 36 pairs
+# Output: models/cvae_*_loko_{A}_{B}.pt for all 36 pairs
 
 # Step 3 — compute metrics for every checkpoint + 3 baselines
 python scripts/05_evaluate.py
@@ -451,7 +435,7 @@ python scripts/08_distance_split.py
 For a quick test run of just the model training, use a reduced epoch count:
 
 ```bash
-python scripts/03_train.py --variant only_fix1 --target_zscore 1 --gene_var_weight 1 --fix5 0
+python scripts/03_train.py --fix1 1 --target_zscore 1 --gene_var_weight 1
 # Trains in under 2 minutes on CPU; the submitted checkpoint already contains
 # the full trained model so retraining is not required to inspect results.
 ```
