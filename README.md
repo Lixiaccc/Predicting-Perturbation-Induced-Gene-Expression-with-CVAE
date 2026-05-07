@@ -47,7 +47,7 @@ models/                    # trained CVAE checkpoints (.pt) + history
 results/                   # metrics_v2.csv + figures (.png)
 
 FINAL_MODEL_HANDOFF_minimal/  # OT/moscot baseline outputs (separate)
-```
+
 
 ## Data
 
