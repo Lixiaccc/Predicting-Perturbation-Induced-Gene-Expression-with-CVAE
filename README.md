@@ -21,6 +21,7 @@ scripts/
 
 
    ├── 02_preprocess.py       # RNA -> HVG/PCA, ATAC -> TF-IDF/LSI, GenePT -> 32-D, writes processed/cells.npz
+
    ├── 03_train.py            # CVAE training (variants + ablations)
   
    ├── 04_run_leave2out.sh    # leave-2-out CV across all C(9,2)=36 KO pairs
