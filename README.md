@@ -27,16 +27,9 @@ notebooks/
 
 ### OT input data
 
-Large input data files are not tracked directly in this repository unless required for submission. The OT notebooks expect the Mixscape-filtered paired multiome dataset or equivalent processed files containing:
-
-```text
-- paired scRNA and scATAC profiles from the same cells
-- cell condition / perturbation labels
-- NTC control labels
-- RNA PCA representation
-- ATAC LSI representation
-- ATAC gene activity representation for FGW experiments
-```
+The input files to the OT are too big for github so they are stored in Google Drive at the following urls. Note these input files are post-Mixscape filtering. Please be sure to save the post-mixscape files and update path names at the top of OT notebooks.
+RNA data: https://drive.google.com/file/d/1-SdwjiF4emCchxUUxcejLPvBZ7ZV_Xfo/view?usp=sharing
+ATAC data: https://drive.google.com/file/d/1-_d2k-2VgRnzwe63HcuptVht8NlKLbC4/view?usp=sharing
 
 The final analysis uses 1,144 NTC cells and 1,521 high-confidence knockout cells across nine perturbations after Mixscape filtering:
 
@@ -81,18 +74,6 @@ results/ot/
    │
    └── selected_method_family_configs.csv
        # One selected configuration per OT method family.
-```
-
-Optional QC outputs are stored under:
-
-```text
-results/ot/qc/
-   ├── FGW_RNA_geometry_gene_activity_old_vs_common_eval_sanity.csv
-   │   # Diagnostic table decomposing differences between moscot translated outputs
-   │   # and explicit plan-barycenter evaluation.
-   │
-   └── FGW_RNA_geometry_gene_activity_old_vs_common_eval_sanity_heatmap.png
-       # Heatmap visualization of the same sanity check.
 ```
 
 ### OT parameters
@@ -150,7 +131,7 @@ The intended run order is:
    - saves sanity-check outputs for comparing moscot translated outputs against explicit plan-barycenter evaluation
 ```
 
-The submitted notebooks should already contain the generated figures/results in their output cells, so it is not necessary to rerun the full OT pipeline just to inspect the final report figures.
+The submitted notebooks should already contain the generated figures/results in their output cells, so it is not necessary to rerun the full OT pipeline just to inspect the final report figures. If there is a desire to run the notebooks themslves, please note that the RNA only notebook is far smaller and quicker to run so we would recommend beginning there. 
 
 ### OT dependencies
 
