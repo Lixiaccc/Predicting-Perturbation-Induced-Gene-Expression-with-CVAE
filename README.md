@@ -4,7 +4,7 @@
 
 The optimal transport (OT) portion of the project is contained in two Google Colab notebooks under `notebooks/`. These notebooks were developed and run in Colab, and the submitted `.ipynb` files should still contain the executed outputs, figures, and summary tables used for the report. If rerunning them, update the Google Drive / repository paths near the top of each notebook to match your local setup.
 
-For a quick test of the OT results we recommend using the moscot_RNA_only.ipynb since it is far smaller and quicker to run. The grid parameters are at the top of the notebook and can be reduced further to quicken it further.
+For a quick test run, we recommend starting with `moscot_RNA_only.ipynb` because it is much smaller and faster than the full multimodal notebook. The grid parameters are near the top of the notebook and can be reduced further for debugging.
 
 ```text
 notebooks/
@@ -27,7 +27,7 @@ notebooks/
 
 ### OT input data
 
-The input files to the OT are too big for github so they are stored in Google Drive at the following urls. Note these input files are post-Mixscape filtering. Please be sure to save the post-mixscape files and update path names at the top of OT notebooks.
+The input files to the OT are too large for github so they are stored in Google Drive at the following urls. Note these input files are post-Mixscape filtering. Please be sure to save the post-mixscape files and update path names at the top of OT notebooks.
 RNA data: https://drive.google.com/file/d/1-SdwjiF4emCchxUUxcejLPvBZ7ZV_Xfo/view?usp=sharing
 ATAC data: https://drive.google.com/file/d/1-_d2k-2VgRnzwe63HcuptVht8NlKLbC4/view?usp=sharing
 
@@ -36,6 +36,10 @@ The final analysis uses 1,144 NTC cells and 1,521 high-confidence knockout cells
 ```text
 ACTL6A, DMAP1, EP400, EZH2, SMARCA4, SMARCB1, SMARCE1, SUZ12, YY1
 ```
+
+The multimodal OT notebook also constructs an ATAC gene activity representation for the FGW experiments. This is generated inside `moscot_multimodal.ipynb` using `gencode.v49.annotation.gtf`. Peaks are overlapped with gene body plus promoter windows, using 2 kb upstream and 500 bp downstream of the TSS, and accessibility is aggregated to gene-level features before normalization and PCA.
+
+The gencode file is too large to upload to github so please access it at the following google drive link and be sure to update path names to it in the colab notebook: https://drive.google.com/file/d/1lGtMte0fOYuy7SNlDpc94e34mYClS6hD/view?usp=sharing
 
 The raw public dataset is available from Zenodo:
 
@@ -113,25 +117,26 @@ Values below 1 indicate that the OT plan moved the NTC distribution closer to th
 The intended run order is:
 
 ```text
-1. Open and run notebooks/moscot_RNA_only_end_to_end_grid_handoff_COMMON_EVAL.ipynb in Google Colab.
+1. Open and run `notebooks/moscot_RNA_only.ipynb` in Google Colab.
 
    This notebook:
    - fits RNA-only OT plans across epsilon/tau settings
    - evaluates plans in common RNA PCA space
    - generates the RNA-only heatmap
-   - writes the FINAL_MODEL_HANDOFF_minimal/ folder used by the CVAE pipeline
+   - writes the `FINAL_MODEL_HANDOFF_minimal/` folder used by the CVAE pipeline
 
-2. Open and run notebooks/moscot_multimodal_FINAL_DEFENSIBLE_COMMON_EVAL_WITH_SANITY_CHECKS_v3_RNA_MATCHED.ipynb in Google Colab.
+2. Open and run `notebooks/moscot_multimodal.ipynb` in Google Colab.
 
    This notebook:
    - compares RNA-only, ATAC-only, RNA+ATAC concat, GW, and FGW method families
+   - constructs ATAC gene activity features using the GENCODE annotation file
    - evaluates all method families in common RNA PCA space
    - evaluates the same method families in ATAC LSI space
    - generates the multimodal OT report figures
-   - saves sanity-check outputs for comparing moscot translated outputs against explicit plan-barycenter evaluation
+   - saves sanity-check outputs comparing moscot translated outputs against explicit plan-barycenter evaluation
 ```
 
-The submitted notebooks should already contain the generated figures/results in their output cells, so it is not necessary to rerun the full OT pipeline just to inspect the final report figures. If there is a desire to run the notebooks themslves, please note that the RNA only notebook is far smaller and quicker to run so we would recommend beginning there. 
+The submitted notebooks should already contain the generated figures/results in their output cells, so it is not necessary to rerun the full OT pipeline just to inspect the final report figures. If there is a desire to run the notebooks themselves, please note that the RNA only notebook is far smaller and quicker to run so we would recommend beginning there. 
 
 ### OT dependencies
 
@@ -151,10 +156,20 @@ torch
 moscot
 ott-jax
 jax
+pyranges
 ```
 
 The OT notebooks were run in Google Colab with Google Drive mounted. GPU is not required for the OT analysis, but some moscot / JAX operations may run faster with hardware acceleration.
 
+Please note that specific packages need specific versions which are defined at the top of each notebook or are included below:
+
+```text
+!pip install -q \
+  "jax[cpu]==0.7.2" \
+  "jaxlib==0.7.2" \
+  "ott-jax==0.6.0" \
+  "moscot==0.5.0"
+```
 
 ## CVAE for KO RNA prediction Portion of the Project
 
