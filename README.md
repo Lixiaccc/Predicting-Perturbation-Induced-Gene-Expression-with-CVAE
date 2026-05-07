@@ -4,13 +4,10 @@ A conditional VAE that predicts post-knockout RNA expression (HVG-log1p) from a
 cell's ATAC profile and a gene-identity embedding for the KO target. Trained
 and evaluated on a 9-KO + NTC dataset (10 conditions).
 
-The final model is **`only_fix1_CD`**: residual targeting (predict δ from NTC
-mean) + per-gene z-scored target (Fix C) + variance-weighted MSE on δ (Fix D).
+The final model: residual targeting (predict δ from NTC
+mean) 
 
 ## Layout
-
-```
-HIGH_DIM_final/
 ├── model/
 │   └── cvae.py                # CVAE_v2 (encoder/decoder), free-bits KL,
 │                              # delta->HVG projection helpers
