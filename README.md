@@ -252,7 +252,7 @@ scripts/
        # Splits NTC cells into closest 25%, middle 50%, farthest 25% to the
        # centroid of all perturbed cells (in 50-D HVG PCA space).
        # Trains and evaluates two regimes (far_train and close_train) across
-       # three models: only_fix1 (CVAE with Fix C + Fix D), mean_pert, linear_mf.
+       # three models: CVAE, mean_pert, linear_mf.
        # Output: results/fig_distance_umap.png
        #         results/fig_distance_split_box.png
        #         results/distance_split_metrics.csv
@@ -410,7 +410,7 @@ python scripts/03_train.py --input rna    # CVAE (RNA)
 
 # Step 2b — run leave-2-out CV across all C(9,2)=36 KO pairs (~6 min on CPU)
 bash scripts/04_run_leave2out.sh          # CVAE (ATAC)
-bash scripts/04_run_leave2out.sh only_fix1_CD genept rna  # CVAE (RNA)
+bash scripts/04_run_leave2out.sh CVAE genept rna  # CVAE (RNA)
 
 # Step 3 — compute metrics for every checkpoint + 3 baselines
 python scripts/05_evaluate.py
