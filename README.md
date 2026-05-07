@@ -334,15 +334,12 @@ to exactly zero and masking the reconstruction loss.
 
 ### Training parameters (`scripts/03_train.py`)
 
-The final model uses **residual targeting** (predict δ from NTC mean), with
-**per-gene z-scoring of the δ target** and **variance-weighted MSE**. The
-corresponding flags are:
+Two model variants are trained, differing only in the encoder input modality:
 
-| Flag | Value | Description |
-|------|-------|-------------|
-| `--fix1` | 1 | Residual targeting: predict δ from NTC mean instead of absolute HVG expression |
-| `--target_zscore` | 1 | Per-gene z-score the δ target using train-set mean and std |
-| `--gene_var_weight` | 1 | Weight the MSE loss by per-gene variance of δ across train cells |
+| Model name | `--input` flag | Encoder input |
+|------------|---------------|---------------|
+| CVAE (ATAC) | `atac` (default) | 50-D ATAC LSI features |
+| CVAE (RNA)  | `rna`            | 50-D RNA PCA features  |
 
 **Data and split flags:**
 
@@ -352,10 +349,9 @@ corresponding flags are:
 | `--seed` | 0 | Random seed for split and training |
 | `--val_frac` | 0.1 | Fraction of in-distribution cells used for validation |
 | `--test_frac` | 0.1 | Fraction of in-distribution cells used for test |
-| `--input` | `atac` | Encoder input modality: `atac` (ATAC_LSI) or `rna` (RNA_PCA) |
 | `--gene_emb` | `genept` | Gene embedding source: `genept` or `geneformer` |
 
-**Other loss and optimization flags:**
+**Loss and optimization flags:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -408,13 +404,13 @@ python scripts/01_generate_genept.py
 python scripts/02_preprocess.py
 # Output: processed/cells.npz, processed/projectors/
 
-# Step 2a — train the final model on all 9 KOs (3-way 80/10/10 split)
-python scripts/03_train.py --fix1 1 --target_zscore 1 --gene_var_weight 1
-# Output: models/cvae_*.pt, models/cvae_*_history.json
+# Step 2a — train CVAE (ATAC) and CVAE (RNA) on all 9 KOs (3-way 80/10/10 split)
+python scripts/03_train.py --input atac   # CVAE (ATAC)
+python scripts/03_train.py --input rna    # CVAE (RNA)
 
 # Step 2b — run leave-2-out CV across all C(9,2)=36 KO pairs (~6 min on CPU)
-bash scripts/04_run_leave2out.sh
-# Output: models/cvae_*_loko_{A}_{B}.pt for all 36 pairs
+bash scripts/04_run_leave2out.sh          # CVAE (ATAC)
+bash scripts/04_run_leave2out.sh only_fix1_CD genept rna  # CVAE (RNA)
 
 # Step 3 — compute metrics for every checkpoint + 3 baselines
 python scripts/05_evaluate.py
@@ -432,10 +428,10 @@ python scripts/08_distance_split.py
 #         results/distance_split_metrics.csv
 ```
 
-For a quick test run of just the model training, use a reduced epoch count:
+For a quick test run of just the model training:
 
 ```bash
-python scripts/03_train.py --fix1 1 --target_zscore 1 --gene_var_weight 1
+python scripts/03_train.py --input atac
 # Trains in under 2 minutes on CPU; the submitted checkpoint already contains
 # the full trained model so retraining is not required to inspect results.
 ```
